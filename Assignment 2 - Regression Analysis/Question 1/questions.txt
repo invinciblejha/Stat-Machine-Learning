@@ -1,0 +1,259 @@
+About centering the data? Does it need to be centered on only the ridge and pcr? centering works with full set also, why?
+ridge needs to be centered. thats all.
+
+If i take the df for the ridge reg, which is around 4, how to I calculate the alpha?
+we want to get the d.f close to 4 as the data has for degrees of freedom.
+
+Should I be looking at how many parts to split the crossval data into? You mention that there is an exponential convergance.
+talk about it..
+
+from pylab import *
+from numpy import *
+from ridgeRegression import *
+from principalComponents import *
+
+def linregp(X,y):
+    # takes N x p matrix X and a N x 1 vector y, and fits  
+    # linear regression y = X*beta. NOTE indenting
+    X1 = concatenate((ones((shape(X)[0],1)),X),axis=1)
+    betahat = linalg.inv(transpose(X1)*X1)*transpose(X1)*y
+    yhat = X1*betahat
+    RSS = transpose(y - yhat)*(y - yhat)
+    return betahat,yhat,RSS
+
+def linregp_ni(X,y):
+    # takes N x p matrix X and a N x 1 vector y, and fits  
+    # linear regression y = X*beta. NOTE indenting
+    betahat = linalg.inv(transpose(X)*X)*transpose(X)*y
+    yhat = X*betahat
+    RSS = transpose(y - yhat)*(y - yhat)
+    return betahat,yhat,RSS
+
+def ridgereg(X,y,lam):
+    # takes N x p matrix X (no intercept column) and a N x 1 vector y, and fits  
+    # ridge regression y = X*beta with lam*transpose(beta)*beta penalty term
+    betahat = linalg.inv(transpose(X)*X + lam*eye(X.shape[1]))*transpose(X)*y
+    # add intercept term
+    betahat0 = matrix(mean(array(y), axis=0))
+    betahat = concatenate((betahat0,betahat),axis=0) 
+    X1 = concatenate((ones((shape(X)[0],1)),X),axis=1)
+    # calculate fitted yhat
+    yhat = X1*betahat
+    RSS = transpose(y - yhat)*(y - yhat)  # this is not penalized
+    return betahat,yhat,RSS
+
+"""Create Training data and standardise according to training data variance"""
+
+data = loadtxt('prostate_train.txt')
+p = 8
+
+## reformat data as X and Y
+data = data.reshape(-1,p+1)
+y = data[:,p]
+N = len(y)
+X = data[:,0:p]
+y = transpose(matrix(y))
+X = matrix(X)
+
+covX = cov(transpose(X)) # need to transpose X to get a p x p covariance matrix
+sdX = sqrt(diag(covX)) # Note that sdX is an array
+
+for i in range(p):
+  X[:,i] = X[:,i]/sdX[i]
+
+Xred = concatenate((X[:,0:2],X[:,3:5]),axis=1)      # Reduced model
+Xbackward = concatenate((X[:,0:6],X[:,7:8]),axis=1) # Backward model
+Xbrute = concatenate((X[:,0:2],X[:,4:5]),axis=1)      # Brute force model
+
+#Center the inputs
+meanX = mean(array(X), axis=0)
+Xcentered = X - ones(shape(y))*meanX 
+
+"""Create Test data and standardise according to training data variance"""
+
+data2 = loadtxt('prostate_test.txt')
+data2 = data2.reshape(-1,p+1)
+
+## reformat data as X and Y
+y2 = data2[:,p]
+X2 = data2[:,0:p]
+y2 = transpose(matrix(y2))
+X2 = matrix(X2)
+
+for i in range(p):
+  X2[:,i] = X2[:,i]/sdX[i] 
+  
+Xred2 = concatenate((X2[:,0:2],X2[:,3:5]),axis=1)       # Reduced model
+Xbackward2 = concatenate((X2[:,0:6],X2[:,7:8]),axis=1)  # Backward model
+Xbrute2 = concatenate((X2[:,0:2],X2[:,5]),axis=1)       # Brute force model
+
+#Center the inputs
+
+X2centered = X2 - ones(shape(y2))*meanX
+
+#Add intercept to X2, with centered inputs
+Xintercept2 = concatenate((ones((shape(X2)[0],1)),X2),axis=1)
+Xintercept2Centered = concatenate((ones((shape(X2centered)[0],1)),X2centered),axis=1)
+
+print 'Independent training and test data'
+
+
+"""Full model, fit to training, then fit full 
+    training model, to test data"""
+    
+betafull, yhatfull, RSSfull = linregp(X,y)
+yhatfull2 = Xintercept2*betafull
+RSSfull2 = transpose(y2 - yhatfull2)*(y2 - yhatfull2)
+print 'beta (full) =',betafull
+
+
+
+"""Reduced model, fit to training, then fit reduced 
+    training model, to test data"""
+    
+betared, yhatred, RSSred = linregp_ni(Xred,y)
+yhatred2 = Xred2*betared
+RSSred2 = transpose(y2 - yhatred2)*(y2 - yhatred2)
+print 'beta (reduced) =',betared
+
+
+
+"""Backward Regression Model, fit to training, then fit backward 
+    training model, to test data"""
+    
+betaback, yhatback, RSSback = linregp_ni(Xbackward,y)
+yhatback2 = Xbackward2*betaback
+RSSback2 = transpose(y2 - yhatback2)*(y2 - yhatback2)
+print 'beta (backward) =',betaback 
+
+
+
+"""Ridge Regression Model, fit to training, then fit ridge regression
+    training model, to test data"""    
+
+ridgelambda = 32
+betaridge, yhatridge, RSSridge = ridgereg(Xcentered,y,ridgelambda)
+yhatridge2 = Xintercept2Centered*betaridge
+RSSridge2 = transpose(y2 - yhatridge2)*(y2 - yhatridge2)
+dflambda = trace(Xcentered*linalg.inv(transpose(Xcentered)*Xcentered+ridgelambda*eye(8))*transpose(Xcentered))
+print 'beta (ridge) =',betaridge
+
+
+
+"""Brute Force Model, fit to training, then fit brute force 
+    training model, to test data"""
+    
+betabrute, yhatbrute, RSSbrute = linregp_ni(Xbrute,y)
+yhatbrute2 = Xbrute2*betabrute
+RSSbrute2 = transpose(y2 - yhatbrute2)*(y2 - yhatbrute2)
+print 'beta (brute) =',betabrute
+
+
+print ' '
+print 'Full model     : RSS(train), RSS(test) =',RSSfull,RSSfull2
+print 'Reduced model  : RSS(train), RSS(test) =',RSSred,RSSred2
+print 'Backward model : RSS(train), RSS(test) =',RSSback,RSSback2
+print 'Brute model    : RSS(train), RSS(test) =',RSSbrute,RSSbrute2
+print 'Ridge model    : RSS(train), RSS(test) =',RSSridge,RSSridge2
+print ' '
+
+
+# get sigma2 from full (low-bias) model
+sigma2 = (std(yhatfull - y))**2
+print 'sigma2 =',sigma2
+
+""" Calculate AIC """
+print ' ' 
+aicfull =   RSSfull/N   + 2.0 * len(betafull)   *sigma2/N 
+aicred =    RSSred/N    + 2.0 * len(betared)    *sigma2/N 
+aicback =   RSSback/N   + 2.0 * len(betaback)   *sigma2/N 
+aicbrute =  RSSbrute/N  + 2.0 * len(betabrute)  *sigma2/N 
+aicridge =  RSSridge/N  + 2.0 * len(betaridge)  *sigma2/N 
+
+print 'AIC (full | reduced | backward | brute | ridge) =', aicfull, aicred, aicback, aicbrute, aicridge
+
+
+""" Question 1 - part (a) i - i. Calculate the BIC, and use these to calculate the posterior probabilities """
+
+""" Calculate BIC """
+
+print ' '
+bicfull =   N/sigma2 *   ((RSSfull/N)   + math.log(N) * (len(betafull)  * sigma2/N))
+bicred  =   N/sigma2 *   ((RSSred/N)    + math.log(N) * (len(betared)   * sigma2/N))
+bicback =   N/sigma2 *   ((RSSback/N)   + math.log(N) * (len(betaback)  * sigma2/N))
+bicbrute =  N/sigma2 *   ((RSSbrute/N)  + math.log(N) * (len(betabrute) * sigma2/N))
+bicridge =  N/sigma2 *   ((RSSridge/N)  + math.log(N) * (dflambda * sigma2/N))
+print 'BIC (full | reduced | backward | brute | ridge) =', bicfull, bicred, bicback, bicbrute, bicridge
+
+"""Posterior probabilities"""
+
+ebicfull  = math.exp(-(.5 * bicfull))
+ebicred   = math.exp(-(.5 * bicred))
+ebicback  = math.exp(-(.5 * bicback))
+ebicbrute = math.exp(-(.5 * bicbrute))
+ebicridge = math.exp(-(.5 * bicridge))
+sumebic = ebicfull + ebicred + ebicback + ebicbrute + ebicridge
+
+print ' '
+print 'Full Model Posterior probability                 ', int(ebicfull/sumebic*100),"%"
+print 'Reduced Model Posterior probability              ', int(ebicred/sumebic*100),"%"
+print 'Backwards Regression Model Posterior probability ', int(ebicback/sumebic*100),"%"
+print 'Brute Force Model Posterior probability          ', int(ebicbrute/sumebic*100),"%"
+print 'Ridge Regression Model Posterior probability     ', int(ebicridge/sumebic*100),"%"
+print ' '
+
+
+""" Question 1 - Part (a) ii - Compare the prediction errors on training and test data """
+
+## Training Optimism
+opfull  = 2.0*len(betafull)  *sigma2/len(y)
+opred   = 2.0*len(betared)   *sigma2/len(y)
+opback  = 2.0*len(betaback)  *sigma2/len(y)
+opbrute = 2.0*len(betabrute) *sigma2/len(y)
+opridge = 2.0*len(betaridge) *sigma2/len(y)
+
+## Training error
+errfull  = RSSfull  / len(y)
+errred   = RSSred   / len(y)
+errback  = RSSback  / len(y)
+errbrute = RSSbrute / len(y)
+errridge = RSSridge / len(y)
+
+## In sample error - Training
+Errfull   = errfull  + opfull
+Errred    = errred   + opred
+Errback   = errback  + opback
+Errbrute  = errbrute + opbrute
+Errridge  = errridge + opridge
+
+
+print 'error,optimism,total (full - train)       =',errfull, opfull, Errfull
+print 'error,optimism,total (reduced -train)     =',errred, opred, Errred
+print 'error,optimism,total (backward - train)   =',errback, opback, Errback
+print 'error,optimism,total (brute - train)      =',errbrute, opbrute, Errbrute
+print 'error,optimism,total (ridge - train)      =',errridge, opridge, Errridge
+
+
+Full model     : RSS(train), RSS(test) = [[ 29.42638396]] [[ 17.58986697]]
+Reduced model  : RSS(train), RSS(test) = [[ 32.90740736]] [[ 14.9072031]]
+Backward model : RSS(train), RSS(test) = [[ 29.46915747]] [[ 17.81868254]]
+Brute model    : RSS(train), RSS(test) = [[ 36.0480287]] [[ 12.77501642]]
+Ridge model    : RSS(train), RSS(test) = [[ 35.07993745]] [[ 16.4449807]]
+ 
+sigma2 = 0.439199760572
+ 
+AIC (full | reduced | backward | brute | ridge) = [[ 0.55719373]] [[ 0.5435971]] [[ 0.53161126]] [[ 0.5773616]] [[ 0.64157512]]
+ 
+BIC (full | reduced | backward | brute | ridge) = [[ 104.84223357]] [[ 91.74460222]] [[ 96.53023798]] [[ 94.69069069]] [[ 98.54413106]]
+ 
+Full Model Posterior probability                  0 %
+Reduced Model Posterior probability               73 %
+Backwards Regression Model Posterior probability  6 %
+Brute Force Model Posterior probability           16 %
+Ridge Regression Model Posterior probability      2 %
+ 
+error,optimism,total (full - train)       = [[ 0.43919976]] 0.117993965527 [[ 0.55719373]]
+error,optimism,total (reduced -train)     = [[ 0.49115533]] 0.0524417624564 [[ 0.5435971]]
+error,optimism,total (backward - train)   = [[ 0.43983817]] 0.0917730842987 [[ 0.53161126]]
+error,optimism,total (brute - train)      = [[ 0.53803028]] 0.0393313218423 [[ 0.5773616]]
+error,optimism,total (ridge - train)      = [[ 0.52358116]] 0.117993965527 [[ 0.64157512]]
